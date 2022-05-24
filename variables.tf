@@ -33,7 +33,7 @@ variable "not_resources" {
 }
 
 variable "principals" {
-  description = "An optional list of principals (other than those defined in the `org_principals` input variable) that this policy applies to."
+  description = "An optional list of principals (other than those defined in the `org_entities` input variable) that this policy applies to."
   type = list(object({
     type        = string
     identifiers = list(string)
@@ -78,15 +78,15 @@ variable "sid" {
   default     = null
 }
 
-variable "org_principals" {
+variable "org_entities" {
   description = "A list of Organization resource identifiers to grant access to. Each element must be an Organization ID, an Organizational Unit ID, or an Account ID."
   type        = list(any)
   validation {
-    condition     = var.org_principals == null || length([for principal in var.org_principals : true if !(can(tonumber(principal)) || can(tostring(principal)))]) == 0
-    error_message = "All elements of the `org_principals` input variable must be a number (AWS account ID) or a string (Organization or Organizational Unit ID)."
+    condition     = var.org_entities == null || length([for principal in var.org_entities : true if !(can(tonumber(principal)) || can(tostring(principal)))]) == 0
+    error_message = "All elements of the `org_entities` input variable must be a number (AWS account ID) or a string (Organization or Organizational Unit ID)."
   }
   validation {
-    condition     = var.org_principals == null || length([for principal in var.org_principals : true if can(tostring(principal)) && length(regexall("/", principal)) > 0]) == 0
+    condition     = var.org_entities == null || length([for principal in var.org_entities : true if can(tostring(principal)) && length(regexall("/", principal)) > 0]) == 0
     error_message = "The `entity_id` fields may not contain the `/` character. For Organizations and Organizational Units, this field should be the Organization/OU ID, not the Organization root path or the full OU path."
   }
 }
@@ -113,7 +113,7 @@ locals {
   principals                = var.principals == null ? [] : var.principals
   not_principals            = var.not_principals == null ? [] : var.not_principals
   conditions                = var.not_principals == null ? [] : var.conditions
-  org_principals            = var.org_principals == null ? [] : var.org_principals
+  org_entities              = var.org_entities == null ? [] : var.org_entities
   source_policy_documents   = var.source_policy_documents == null ? [] : var.source_policy_documents
   override_policy_documents = var.override_policy_documents == null ? [] : var.override_policy_documents
 }

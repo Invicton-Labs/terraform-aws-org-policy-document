@@ -1,21 +1,21 @@
 locals {
   organizations = [
-    for principal in local.org_principals :
+    for principal in local.org_entities :
     principal
     if substr(principal, 0, 2) == "o-"
   ]
   organizational_units = [
-    for principal in local.org_principals :
+    for principal in local.org_entities :
     principal
     if substr(principal, 0, 3) == "ou-"
   ]
   accounts = [
-    for principal in local.org_principals :
+    for principal in local.org_entities :
     principal
     if can(tonumber(principal))
   ]
   uncategorized_entity_ids = [
-    for principal in local.org_principals :
+    for principal in local.org_entities :
     principal
     if
     !contains(local.organizations, principal) &&

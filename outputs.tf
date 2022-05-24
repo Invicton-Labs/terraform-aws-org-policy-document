@@ -46,9 +46,9 @@ output "sid" {
   value       = var.sid
 }
 
-output "org_principals" {
-  description = "The value of the `org_principals` input variable (or the default value if the input was `null`)."
-  value       = local.org_principals
+output "org_entities" {
+  description = "The value of the `org_entities` input variable (or the default value if the input was `null`)."
+  value       = local.org_entities
 }
 
 output "source_policy_documents" {
