@@ -79,21 +79,14 @@ variable "sid" {
 }
 
 variable "org_principals" {
-  description = <<EOF
-A list of Organization resource identifiers to grant access to. Each element is an object with a `entity_id` value (an Organization ID, an Organizational Unit ID, or an Account ID) and an `iam_types` value.
-
-If `delegation_required` is `true`, then permission will be granted to the root user of the given account (arn:aws:iam::ACCOUNT_ID:root). If it is `false`, then permission will be granted to any IAM entity (users, roles, groups, etc.) within that Organization/OU/Account."
-EOF
-  type = list(object({
-    entity_id           = string
-    delegation_required = bool
-  }))
+  description = "A list of Organization resource identifiers to grant access to. Each element must be an Organization ID, an Organizational Unit ID, or an Account ID."
+  type        = list(any)
   validation {
-    condition     = var.org_principals == null || length([for principal in var.org_principals : true if principal.entity_id == null || principal.delegation_required == null]) == 0
-    error_message = "Neither the `entity_id` nor `delegation_required` field of any element in the `org_principals` input variable may be `null`."
+    condition     = var.org_principals == null || length([for principal in var.org_principals : true if !(can(tonumber(principal)) || can(tostring(principal)))]) == 0
+    error_message = "All elements of the `org_principals` input variable must be a number (AWS account ID) or a string (Organization or Organizational Unit ID)."
   }
   validation {
-    condition     = var.org_principals == null || length([for principal in var.org_principals : true if length(regexall("/", principal.entity_id)) > 0]) == 0
+    condition     = var.org_principals == null || length([for principal in var.org_principals : true if can(tostring(principal)) && length(regexall("/", principal)) > 0]) == 0
     error_message = "The `entity_id` fields may not contain the `/` character. For Organizations and Organizational Units, this field should be the Organization/OU ID, not the Organization root path or the full OU path."
   }
 }

@@ -1,41 +1,26 @@
 locals {
-  organizations_delegation_required = [
+  organizations = [
     for principal in local.org_principals :
-    principal.entity_id
-    if substr(principal.entity_id, 0, 2) == "o-" && principal.delegation_required
+    principal
+    if substr(principal, 0, 2) == "o-"
   ]
-  organizations_delegation_not_required = [
+  organizational_units = [
     for principal in local.org_principals :
-    principal.entity_id
-    if substr(principal.entity_id, 0, 2) == "o-" && !principal.delegation_required
+    principal
+    if substr(principal, 0, 3) == "ou-"
   ]
-  organizational_units_delegation_required = [
+  accounts = [
     for principal in local.org_principals :
-    principal.entity_id
-    if substr(principal.entity_id, 0, 3) == "ou-" && principal.delegation_required
-  ]
-  organizational_units_delegation_not_required = [
-    for principal in local.org_principals :
-    principal.entity_id
-    if substr(principal.entity_id, 0, 3) == "ou-" && !principal.delegation_required
-  ]
-  accounts_delegation_required = [
-    for principal in local.org_principals :
-    principal.entity_id
-    if can(tonumber(principal.entity_id)) && principal.delegation_required
-  ]
-  accounts_delegation_not_required = [
-    for principal in local.org_principals :
-    principal.entity_id
-    if can(tonumber(principal.entity_id)) && !principal.delegation_required
+    principal
+    if can(tonumber(principal))
   ]
   uncategorized_entity_ids = [
     for principal in local.org_principals :
-    principal.entity_id
+    principal
     if
-    !contains(local.organizations_delegation_required, principal.entity_id) && !contains(local.organizations_delegation_not_required, principal.entity_id) &&
-    !contains(local.organizational_units_delegation_required, principal.entity_id) && !contains(local.organizational_units_delegation_not_required, principal.entity_id) &&
-    !contains(local.accounts_delegation_required, principal.entity_id) && !contains(local.accounts_delegation_not_required, principal.entity_id)
+    !contains(local.organizations, principal) &&
+    !contains(local.organizational_units, principal) &&
+    !contains(local.accounts, principal)
   ]
 }
 
@@ -94,89 +79,11 @@ data "aws_iam_policy_document" "this" {
     }
   }
 
-  // This statement grants permissions to the AWS accounts, to the root user
-  dynamic "statement" {
-    for_each = length(local.accounts_delegation_required) > 0 ? [1] : []
-    content {
-      sid           = var.sid != null ? "${var.sid}AccountsDelegationRequired" : null
-      effect        = local.effect
-      actions       = local.actions
-      not_actions   = local.not_actions
-      resources     = local.resources
-      not_resources = local.not_resources
-      dynamic "not_principals" {
-        for_each = local.not_principals
-        content {
-          type        = not_principals.value.type
-          identifiers = not_principals.value.identifiers
-        }
-      }
-      dynamic "condition" {
-        for_each = local.conditions
-        content {
-          test     = condition.value.test
-          values   = condition.value.values
-          variable = condition.value.variable
-        }
-      }
-
-      // Grant the account roots access as principals
-      principals {
-        type = "AWS"
-        identifiers = [
-          for account_id in local.accounts_delegation_required :
-          "arn:aws:iam::${account_id}:root"
-        ]
-      }
-    }
-  }
-
-  // This statement grants permissions to all IAM entities within the specified AWS accounts
-  dynamic "statement" {
-    for_each = length(local.accounts_delegation_not_required) > 0 ? [1] : []
-    content {
-      sid           = var.sid != null ? "${var.sid}AccountsDelegationNotRequired" : null
-      effect        = local.effect
-      actions       = local.actions
-      not_actions   = local.not_actions
-      resources     = local.resources
-      not_resources = local.not_resources
-      dynamic "not_principals" {
-        for_each = local.not_principals
-        content {
-          type        = not_principals.value.type
-          identifiers = not_principals.value.identifiers
-        }
-      }
-      dynamic "condition" {
-        for_each = local.conditions
-        content {
-          test     = condition.value.test
-          values   = condition.value.values
-          variable = condition.value.variable
-        }
-      }
-
-      // Grant all AWS principals access. Access is restricted with the condition key below.
-      principals {
-        type = "AWS"
-        identifiers = [
-          "*"
-        ]
-      }
-      condition {
-        test     = "StringEquals"
-        variable = "aws:PrincipalAccount"
-        values   = local.accounts_delegation_not_required
-      }
-    }
-  }
-
   // This statement grants permissions to the roots of all accounts in the specified Organizations
   dynamic "statement" {
-    for_each = length(local.organizations_delegation_required) > 0 ? [1] : []
+    for_each = length(local.organizations) > 0 ? [1] : []
     content {
-      sid           = var.sid != null ? "${var.sid}OrganizationsDelegationRequired" : null
+      sid           = var.sid != null ? "${var.sid}Organizations" : null
       effect        = local.effect
       actions       = local.actions
       not_actions   = local.not_actions
@@ -209,66 +116,26 @@ data "aws_iam_policy_document" "this" {
       condition {
         test     = "StringEquals"
         variable = "aws:PrincipalOrgID"
-        values   = local.organizations_delegation_required
+        values   = local.organizations
       }
-      // Restrict it to account roots (they can then delegate within their account)
+      // Don't grant this permission on the owner account. If we do,
+      // then all IAM entities in the owner account will have access,
+      // even if they don't have a policy to do so. That would be insecure.
       condition {
-        test     = "ArnEquals"
-        variable = "aws:PrincipalType"
+        test     = "StringNotEquals"
+        variable = "aws:ResourceAccount"
         values = [
-          "Account"
+          "$${aws:PrincipalAccount}"
         ]
-      }
-    }
-  }
-
-  // This statement grants permissions to all IAM entities in the specified Organizations
-  dynamic "statement" {
-    for_each = length(local.organizations_delegation_not_required) > 0 ? [1] : []
-    content {
-      sid           = var.sid != null ? "${var.sid}OrganizationsDelegationNotRequired" : null
-      effect        = local.effect
-      actions       = local.actions
-      not_actions   = local.not_actions
-      resources     = local.resources
-      not_resources = local.not_resources
-      dynamic "not_principals" {
-        for_each = local.not_principals
-        content {
-          type        = not_principals.value.type
-          identifiers = not_principals.value.identifiers
-        }
-      }
-      dynamic "condition" {
-        for_each = local.conditions
-        content {
-          test     = condition.value.test
-          values   = condition.value.values
-          variable = condition.value.variable
-        }
-      }
-
-      // Grant access to all IAM entities
-      principals {
-        type = "AWS"
-        identifiers = [
-          "*"
-        ]
-      }
-      // Restrict it to accounts in the organization
-      condition {
-        test     = "StringEquals"
-        variable = "aws:PrincipalOrgID"
-        values   = local.organizations_delegation_not_required
       }
     }
   }
 
   // This statement grants permissions to the roots of all accounts in the specified Organizational Units
   dynamic "statement" {
-    for_each = length(local.organizational_units_delegation_required) > 0 ? [1] : []
+    for_each = length(local.organizational_units) > 0 ? [1] : []
     content {
-      sid           = var.sid != null ? "${var.sid}OrganizationalUnitsDelegationRequired" : null
+      sid           = var.sid != null ? "${var.sid}OrganizationalUnits" : null
       effect        = local.effect
       actions       = local.actions
       not_actions   = local.not_actions
@@ -304,26 +171,28 @@ data "aws_iam_policy_document" "this" {
         values = [
           // OU IDs are globally unique, so it's safe to do this without knowing anything
           // about the Organization structure (org ID, root ID, parent OU IDs, etc.).
-          for ou_id in local.organizational_units_delegation_required :
+          for ou_id in local.organizational_units :
           "*/${ou_id}/*"
         ]
       }
-      // Restrict it to account roots (they can then delegate within their account)
+      // Don't grant this permission on the owner account. If we do,
+      // then all IAM entities in the owner account will have access,
+      // even if they don't have a policy to do so. That would be insecure.
       condition {
-        test     = "ArnEquals"
-        variable = "aws:PrincipalType"
+        test     = "StringNotEquals"
+        variable = "aws:ResourceAccount"
         values = [
-          "Account"
+          "$${aws:PrincipalAccount}"
         ]
       }
     }
   }
 
-  // This statement grants permissions to all IAM entities in the specified Organizational Units
+  // This statement grants permissions to the AWS accounts, to the root user
   dynamic "statement" {
-    for_each = length(local.organizational_units_delegation_not_required) > 0 ? [1] : []
+    for_each = length(local.accounts) > 0 ? [1] : []
     content {
-      sid           = var.sid != null ? "${var.sid}OrganizationalUnitsDelegationNotRequired" : null
+      sid           = var.sid != null ? "${var.sid}Accounts" : null
       effect        = local.effect
       actions       = local.actions
       not_actions   = local.not_actions
@@ -345,22 +214,22 @@ data "aws_iam_policy_document" "this" {
         }
       }
 
-      // Grant access to all IAM entities
+      // Grant the account roots access as principals
       principals {
         type = "AWS"
         identifiers = [
-          "*"
+          for account_id in local.accounts_delegation_required :
+          "arn:aws:iam::${account_id}:root"
         ]
       }
-      // Restrict it to accounts in the organization
+      // Don't grant this permission on the owner account. If we do,
+      // then all IAM entities in the owner account will have access,
+      // even if they don't have a policy to do so. That would be insecure.
       condition {
-        test     = "ForAnyValue:StringLike"
-        variable = "aws:PrincipalOrgPaths"
+        test     = "StringNotEquals"
+        variable = "aws:ResourceAccount"
         values = [
-          // OU IDs are globally unique, so it's safe to do this without knowing anything
-          // about the Organization structure (org ID, root ID, parent OU IDs, etc.).
-          for ou_id in local.organizational_units_delegation_not_required :
-          "*/${ou_id}/*"
+          "$${aws:PrincipalAccount}"
         ]
       }
     }
