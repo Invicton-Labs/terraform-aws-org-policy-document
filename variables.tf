@@ -78,6 +78,12 @@ variable "sid" {
   default     = null
 }
 
+variable "organization_id" {
+  description = "The ID of the AWS Organization that all Organizational Units that are specified in `org_identities` must be under. If this value is not specified, but an Organizational Unit ID is specified in `org_identities`, this module will throw an error."
+  type        = string
+  default     = null
+}
+
 variable "org_entities" {
   description = "A list of Organization resource identifiers to grant access to. Each element must be an Organization ID, an Organizational Unit ID, or an Account ID."
   type        = list(any)

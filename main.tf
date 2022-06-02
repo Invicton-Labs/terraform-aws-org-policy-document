@@ -24,6 +24,13 @@ locals {
   ]
 }
 
+module "assert_org_id_provided" {
+  source        = "Invicton-Labs/assertion/null"
+  version       = "~> 0.2.1"
+  condition     = length(local.organizational_units) == 0 || (var.organization_id != null && var.organization_id != "")
+  error_message = "If one or more Organizational Unit IDs are provided in the `org_entities` variable, then the `organization_id` variable must also be provided."
+}
+
 module "assert_all_entities_categorized" {
   source        = "Invicton-Labs/assertion/null"
   version       = "~> 0.2.1"
@@ -34,6 +41,7 @@ module "assert_all_entities_categorized" {
 data "aws_iam_policy_document" "this" {
   // Check the assertions first
   depends_on = [
+    module.assert_org_id_provided,
     module.assert_action_present,
     module.assert_all_entities_categorized,
   ]
@@ -169,10 +177,13 @@ data "aws_iam_policy_document" "this" {
         test     = "ForAnyValue:StringLike"
         variable = "aws:PrincipalOrgPaths"
         values = [
-          // OU IDs are globally unique, so it's safe to do this without knowing anything
-          // about the Organization structure (org ID, root ID, parent OU IDs, etc.).
+          // OU IDs are NOT globally unique, so we require specifying an organization ID
+          // before any of the OU IDs. This ensures that we don't accidentally share something
+          // with an OU in a different organization that might have the same name.
           for ou_id in local.organizational_units :
-          "*/${ou_id}/*"
+          // There will always be a root ID after the org ID, but before the OU ID, so we
+          // can be sure that something will fill the first *
+          "${var.organization_id}/*/${ou_id}/*"
         ]
       }
       // Don't grant this permission on the owner account. If we do,
