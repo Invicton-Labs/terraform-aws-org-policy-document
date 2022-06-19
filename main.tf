@@ -4,6 +4,11 @@ locals {
     principal
     if substr(principal, 0, 2) == "o-"
   ]
+  organization_roots = [
+    for principal in local.org_entities :
+    principal
+    if substr(principal, 0, 2) == "r-"
+  ]
   organizational_units = [
     for principal in local.org_entities :
     principal
@@ -19,6 +24,7 @@ locals {
     principal
     if
     !contains(local.organizations, principal) &&
+    !contains(local.organization_roots, principal) &&
     !contains(local.organizational_units, principal) &&
     !contains(local.accounts, principal)
   ]
@@ -141,9 +147,9 @@ data "aws_iam_policy_document" "this" {
 
   // This statement grants permissions to the roots of all accounts in the specified Organizational Units
   dynamic "statement" {
-    for_each = length(local.organizational_units) > 0 ? [1] : []
+    for_each = length(local.organizational_units) + length(local.organization_roots) > 0 ? [1] : []
     content {
-      sid           = var.sid != null ? "${var.sid}OrganizationalUnits" : null
+      sid           = var.sid != null ? "${var.sid}OrganizationalRootsAndUnits" : null
       effect        = local.effect
       actions       = local.actions
       not_actions   = local.not_actions
@@ -176,15 +182,23 @@ data "aws_iam_policy_document" "this" {
       condition {
         test     = "ForAnyValue:StringLike"
         variable = "aws:PrincipalOrgPaths"
-        values = [
-          // OU IDs are NOT globally unique, so we require specifying an organization ID
-          // before any of the OU IDs. This ensures that we don't accidentally share something
-          // with an OU in a different organization that might have the same name.
-          for ou_id in local.organizational_units :
-          // There will always be a root ID after the org ID, but before the OU ID, so we
-          // can be sure that something will fill the first *
-          "${var.organization_id}/*/${ou_id}/*"
-        ]
+        // Org Root IDs and OU IDs are NOT globally unique, so we require specifying an organization ID
+        // before any of the Root/OU IDs. This ensures that we don't accidentally share something
+        // with a Root/OU in a different organization that might have the same ID.
+        values = concat(
+          // Share with all specified organization roots
+          [
+            for root_id in local.organization_roots :
+            "${var.organization_id}/${root_id}/*"
+          ],
+          // Share with all specified organizational units
+          [
+            for ou_id in local.organizational_units :
+            // There will always be a root ID after the org ID, but before the OU ID, so we
+            // can be sure that something will fill the first *
+            "${var.organization_id}/*/${ou_id}/*"
+          ]
+        )
       }
       // Don't grant this permission on the owner account. If we do,
       // then all IAM entities in the owner account will have access,
@@ -229,7 +243,7 @@ data "aws_iam_policy_document" "this" {
       principals {
         type = "AWS"
         identifiers = [
-          for account_id in local.accounts_delegation_required :
+          for account_id in local.accounts :
           "arn:aws:iam::${account_id}:root"
         ]
       }

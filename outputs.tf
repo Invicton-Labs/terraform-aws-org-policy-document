@@ -69,6 +69,11 @@ output "organization_ids" {
   value       = local.organizations
 }
 
+output "organization_root_ids" {
+  description = "A list of Organization Root IDs that are included in the policy."
+  value       = local.organization_roots
+}
+
 output "organizational_unit_ids" {
   description = "A list of Organizational Unit IDs that are included in the policy."
   value       = local.organizational_units

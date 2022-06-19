@@ -3,11 +3,17 @@ variable "actions" {
   type        = list(string)
   default     = []
 }
+locals {
+  actions = var.actions == null ? null : length(var.actions) == 0 ? null : var.actions
+}
 
 variable "not_actions" {
   description = "A list of IAM actions that the policy does not apply to."
   type        = list(string)
   default     = []
+}
+locals {
+  not_actions = var.not_actions == null ? null : length(var.not_actions) == 0 ? null : var.not_actions
 }
 
 variable "effect" {
@@ -19,17 +25,26 @@ variable "effect" {
     error_message = "The `effect` input variable must be `Allow` or `Deny`."
   }
 }
+locals {
+  effect = var.effect == null ? "Allow" : var.effect
+}
 
 variable "resources" {
   description = "An optional list of resources that this policy applies to."
   type        = list(string)
   default     = []
 }
+locals {
+  resources = var.resources == null ? null : length(var.resources) == 0 ? null : var.resources
+}
 
 variable "not_resources" {
   description = "An optional list of resources that this policy does not apply to."
   type        = list(string)
   default     = []
+}
+locals {
+  not_resources = var.not_resources == null ? null : length(var.not_resources) == 0 ? null : var.not_resources
 }
 
 variable "principals" {
@@ -44,6 +59,9 @@ variable "principals" {
     error_message = "Neither the `type` nor `identifiers` field of any element in the `principals` input variable may be `null`."
   }
 }
+locals {
+  principals = var.principals == null ? [] : var.principals
+}
 
 variable "not_principals" {
   description = "An optional list of principals that this policy does not apply to."
@@ -56,6 +74,9 @@ variable "not_principals" {
     condition     = var.not_principals == null || length([for principal in var.not_principals : true if principal.type == null || principal.identifiers == null]) == 0
     error_message = "Neither the `type` nor `identifiers` field of any element in the `not_principals` input variable may be `null`."
   }
+}
+locals {
+  not_principals = var.not_principals == null ? [] : var.not_principals
 }
 
 variable "conditions" {
@@ -70,6 +91,9 @@ variable "conditions" {
     condition     = var.conditions == null || length([for condition in var.conditions : true if condition.test == null || condition.values == null || condition.variable == null]) == 0
     error_message = "None of the `test`, `values`, `variable` fields of any element in the `conditions` input variable may be `null`."
   }
+}
+locals {
+  conditions = var.not_principals == null ? [] : var.conditions
 }
 
 variable "sid" {
@@ -88,13 +112,25 @@ variable "org_entities" {
   description = "A list of Organization resource identifiers to grant access to. Each element must be an Organization ID, an Organizational Unit ID, or an Account ID."
   type        = list(any)
   validation {
-    condition     = var.org_entities == null || length([for principal in var.org_entities : true if !(can(tonumber(principal)) || can(tostring(principal)))]) == 0
-    error_message = "All elements of the `org_entities` input variable must be a number (AWS account ID) or a string (Organization or Organizational Unit ID)."
+    condition = var.org_entities == null ? true : length([for principal in var.org_entities : true if(
+      // If it can be converted to a number, it might be an AWS account number, so it's good
+      can(tonumber(principal)) ? false : (
+        // Otherwise, if it can't be converted to a string, it's invalid
+        !can(tostring(principal)) ? true : (
+          // It can be converted to a string, but not a number, so it's probably an Org/Root/OU ID, so check each
+          !(substr(tostring(principal), 0, 2) == "o-" || substr(tostring(principal), 0, 2) == "r-" || substr(tostring(principal), 0, 3) == "ou-")
+        )
+      )
+    )]) == 0
+    error_message = "Each element of the `org_entities` input variable must be an AWS account ID, an Organization ID (string starting with \"o-\"), an Organization Root ID (string starting with \"r-\"), or an Organizational Unit ID (string starting with \"ou-\")."
   }
   validation {
-    condition     = var.org_entities == null || length([for principal in var.org_entities : true if can(tostring(principal)) && length(regexall("/", principal)) > 0]) == 0
+    condition     = var.org_entities == null ? true : length([for principal in var.org_entities : true if !can(tostring(principal)) ? false : length(regexall("/", tostring(principal))) > 0]) == 0
     error_message = "The `entity_id` fields may not contain the `/` character. For Organizations and Organizational Units, this field should be the Organization/OU ID, not the Organization root path or the full OU path."
   }
+}
+locals {
+  org_entities = var.org_entities == null ? [] : var.org_entities
 }
 
 variable "source_policy_documents" {
@@ -102,25 +138,16 @@ variable "source_policy_documents" {
   type        = list(string)
   default     = []
 }
+locals {
+  source_policy_documents = var.source_policy_documents == null ? [] : var.source_policy_documents
+}
 
 variable "override_policy_documents" {
   description = "A list of IAM policy documents that are merged together into the exported document. Statements generated by this module will be overwritten by statements with the same SID in these override documents."
   type        = list(string)
   default     = []
 }
-
-// This sets default values for variables that are provided as `null`
 locals {
-  actions                   = var.actions == null ? null : length(var.actions) == 0 ? null : var.actions
-  not_actions               = var.not_actions == null ? null : length(var.not_actions) == 0 ? null : var.not_actions
-  effect                    = var.effect == null ? "Allow" : var.effect
-  resources                 = var.resources == null ? null : length(var.resources) == 0 ? null : var.resources
-  not_resources             = var.not_resources == null ? null : length(var.not_resources) == 0 ? null : var.not_resources
-  principals                = var.principals == null ? [] : var.principals
-  not_principals            = var.not_principals == null ? [] : var.not_principals
-  conditions                = var.not_principals == null ? [] : var.conditions
-  org_entities              = var.org_entities == null ? [] : var.org_entities
-  source_policy_documents   = var.source_policy_documents == null ? [] : var.source_policy_documents
   override_policy_documents = var.override_policy_documents == null ? [] : var.override_policy_documents
 }
 
